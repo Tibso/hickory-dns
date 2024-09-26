@@ -269,6 +269,7 @@ impl<P: ConnectionProvider> AsyncResolver<P> {
     ///
     /// * `name` - name of the record to lookup, if name is not a valid domain name, an error will be returned
     /// * `record_type` - type of record to lookup, all RecordData responses will be filtered to this type
+    /// * `dnssec_ok` - indicates whether or not a DNSSEC response is desired
     ///
     /// # Returns
     ///
@@ -277,13 +278,17 @@ impl<P: ConnectionProvider> AsyncResolver<P> {
         &self,
         name: N,
         record_type: RecordType,
+        dnssec_ok: bool
     ) -> Result<Lookup, ResolveError> {
         let name = match name.into_name() {
             Ok(name) => name,
             Err(err) => return Err(err.into()),
         };
 
-        self.inner_lookup(name, record_type, self.request_options())
+        let mut request_options = self.request_options();
+        request_options.set_dnssec_ok(dnssec_ok);
+
+        self.inner_lookup(name, record_type, request_options)
             .await
     }
 

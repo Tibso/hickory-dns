@@ -992,7 +992,7 @@ pub struct ResolverOpts {
     ///
     /// This is true by default, disabling this is useful for requesting single records, but may prevent successful resolution.
     pub recursion_desired: bool,
-    /// This is true by default, disabling this is useful for requesting single records, but may prevent successful resolution.
+    /// This is false by default, disabling this is useful for requesting single records, but may prevent successful resolution.
     pub authentic_data: bool,
     /// Shuffle DNS servers before each query.
     pub shuffle_dns_servers: bool,

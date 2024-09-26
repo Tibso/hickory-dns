@@ -138,8 +138,9 @@ impl Resolver {
     ///
     /// * `name` - name of the record to lookup, if name is not a valid domain name, an error will be returned
     /// * `record_type` - type of record to lookup
-    pub fn lookup<N: IntoName>(&self, name: N, record_type: RecordType) -> ResolveResult<Lookup> {
-        let lookup = self.async_resolver.lookup(name, record_type);
+    /// * `dnssec_ok` - defines if a DNSSEC response is desired
+    pub fn lookup<N: IntoName>(&self, name: N, record_type: RecordType, dnssec_ok: bool) -> ResolveResult<Lookup> {
+        let lookup = self.async_resolver.lookup(name, record_type, dnssec_ok);
         self.runtime.lock()?.block_on(lookup)
     }
 

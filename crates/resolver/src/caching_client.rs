@@ -396,6 +396,14 @@ where
                     // TODO: disable name validation with ResolverOpts? glibc feature...
                     // restrict to the RData type requested
                     if query.query_class() == r.dns_class() {
+                        // RRSIG evaluation
+                        if options.edns_set_dnssec_ok
+                            && r.record_type() == RecordType::RRSIG
+                            && (search_name.as_ref() == r.name() || query.name() == r.name())
+                        {
+                            return Some((r,ttl));
+                        }
+
                         // standard evaluation, it's an any type or it's the requested type and the search_name matches
                         #[allow(clippy::suspicious_operation_groupings)]
                         if (query.query_type().is_any() || query.query_type() == r.record_type())
