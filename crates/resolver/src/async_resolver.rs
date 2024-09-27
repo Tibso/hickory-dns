@@ -269,7 +269,7 @@ impl<P: ConnectionProvider> AsyncResolver<P> {
     ///
     /// * `name` - name of the record to lookup, if name is not a valid domain name, an error will be returned
     /// * `record_type` - type of record to lookup, all RecordData responses will be filtered to this type
-    /// * `dnssec_ok` - indicates whether or not a DNSSEC response is desired
+    /// * `dnssec_ok` - value of the DO bit in the EDNS options
     ///
     /// # Returns
     ///

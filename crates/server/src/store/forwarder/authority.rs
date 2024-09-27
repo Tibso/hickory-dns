@@ -130,7 +130,7 @@ impl Authority for ForwardAuthority {
         &self,
         name: &LowerName,
         rtype: RecordType,
-        _lookup_options: LookupOptions,
+        lookup_options: LookupOptions,
     ) -> LookupControlFlow<Self::Lookup> {
         // TODO: make this an error?
         debug_assert!(self.origin.zone_of(name));
@@ -143,7 +143,7 @@ impl Authority for ForwardAuthority {
         name.set_fqdn(false);
 
         use LookupControlFlow::*;
-        match self.resolver.lookup(name, rtype).await {
+        match self.resolver.lookup(name, rtype, lookup_options.dnssec_ok()).await {
             Ok(lookup) => Continue(Ok(ForwardLookup(lookup))),
             Err(e) => Continue(Err(LookupError::from(e))),
         }

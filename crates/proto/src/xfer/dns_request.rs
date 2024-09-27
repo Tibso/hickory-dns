@@ -46,6 +46,16 @@ impl Default for DnsRequestOptions {
     }
 }
 
+impl DnsRequestOptions {
+    /// Sets the DO bit in the EDNS options
+    pub fn set_dnssec_ok(
+        &mut self,
+        dnssec_ok: bool
+    ) {
+        self.edns_set_dnssec_ok = dnssec_ok
+    }
+}
+
 /// A DNS request object
 ///
 /// This wraps a DNS Message for requests. It also has request options associated for controlling certain features of the DNS protocol handlers.
