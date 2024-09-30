@@ -17,7 +17,7 @@ use hickory_client::{client::*, error::ClientError, proto::xfer::DnsResponse};
 #[cfg(feature = "dnssec")]
 use hickory_proto::rr::dnssec::*;
 use hickory_proto::rr::{rdata::A, *};
-use hickory_server::server::Protocol;
+use hickory_proto::xfer::Protocol;
 use regex::Regex;
 use tokio::runtime::Runtime;
 use tracing::{info, warn};
@@ -186,7 +186,9 @@ where
                 "UDP" => socket_ports.put(Protocol::Udp, socket_addr),
                 "TCP" => socket_ports.put(Protocol::Tcp, socket_addr),
                 "TLS" => socket_ports.put(Protocol::Tls, socket_addr),
+                #[cfg(feature = "dns-over-https-rustls")]
                 "HTTPS" => socket_ports.put(Protocol::Https, socket_addr),
+                #[cfg(feature = "dns-over-quic")]
                 "QUIC" => socket_ports.put(Protocol::Quic, socket_addr),
                 _ => panic!("unsupported protocol: {proto}"),
             }

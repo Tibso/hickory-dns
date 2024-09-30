@@ -4,16 +4,17 @@ use hickory_proto::{
     op::*,
     rr::{rdata::*, *},
     serialize::binary::{BinDecodable, BinEncodable},
+    xfer::Protocol,
 };
 #[cfg(any(
     feature = "dnssec",
     feature = "dns-over-rustls",
     feature = "dns-over-openssl"
 ))]
-use hickory_server::config::dnssec::NxProofKind;
+use hickory_server::dnssec::NxProofKind;
 use hickory_server::{
     authority::{Authority, Catalog, MessageRequest, ZoneType},
-    server::{Protocol, Request},
+    server::Request,
     store::in_memory::InMemoryAuthority,
 };
 
@@ -125,8 +126,8 @@ async fn test_catalog_lookup() {
     let test_origin = test.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin.clone(), Arc::new(example));
-    catalog.upsert(test_origin.clone(), Arc::new(test));
+    catalog.upsert(origin.clone(), vec![Arc::new(example)]);
+    catalog.upsert(test_origin.clone(), vec![Arc::new(test)]);
 
     let mut question: Message = Message::new();
 
@@ -202,8 +203,8 @@ async fn test_catalog_lookup_soa() {
     let test_origin = test.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin.clone(), Arc::new(example));
-    catalog.upsert(test_origin, Arc::new(test));
+    catalog.upsert(origin.clone(), vec![Arc::new(example)]);
+    catalog.upsert(test_origin, vec![Arc::new(test)]);
 
     let mut question: Message = Message::new();
 
@@ -269,7 +270,7 @@ async fn test_catalog_nx_soa() {
     let origin = example.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin, Arc::new(example));
+    catalog.upsert(origin, vec![Arc::new(example)]);
 
     let mut question: Message = Message::new();
 
@@ -317,7 +318,7 @@ async fn test_non_authoritive_nx_refused() {
     let origin = example.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin, Arc::new(example));
+    catalog.upsert(origin, vec![Arc::new(example)]);
 
     let mut question: Message = Message::new();
 
@@ -371,7 +372,7 @@ async fn test_axfr() {
     .clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin.clone(), Arc::new(test));
+    catalog.upsert(origin.clone(), vec![Arc::new(test)]);
 
     let mut query: Query = Query::new();
     query.set_name(origin.clone().into());
@@ -487,7 +488,7 @@ async fn test_axfr_refused() {
     let origin = test.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin.clone(), Arc::new(test));
+    catalog.upsert(origin.clone(), vec![Arc::new(test)]);
 
     let mut query: Query = Query::new();
     query.set_name(origin.into());
@@ -526,7 +527,7 @@ async fn test_cname_additionals() {
     let origin = example.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin, Arc::new(example));
+    catalog.upsert(origin, vec![Arc::new(example)]);
 
     let mut question: Message = Message::new();
 
@@ -573,7 +574,7 @@ async fn test_multiple_cname_additionals() {
     let origin = example.origin().clone();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin, Arc::new(example));
+    catalog.upsert(origin, vec![Arc::new(example)]);
 
     let mut question: Message = Message::new();
 

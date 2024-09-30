@@ -16,7 +16,7 @@ use tracing::{debug, error, info, trace, warn};
 #[cfg(feature = "dnssec")]
 use crate::{
     authority::Nsec3QueryInfo,
-    config::dnssec::NxProofKind,
+    dnssec::NxProofKind,
     proto::rr::{
         dnssec::{Algorithm, SupportedAlgorithms},
         rdata::opt::{EdnsCode, EdnsOption},
@@ -38,7 +38,7 @@ use crate::{
 /// Set of authorities, zones, available to this server.
 #[derive(Default)]
 pub struct Catalog {
-    authorities: HashMap<LowerName, Arc<dyn AuthorityObject>>,
+    authorities: HashMap<LowerName, Vec<Arc<dyn AuthorityObject>>>,
 }
 
 #[allow(unused_mut, unused_variables)]
@@ -195,12 +195,12 @@ impl Catalog {
     ///
     /// * `name` - zone name, e.g. example.com.
     /// * `authority` - the zone data
-    pub fn upsert(&mut self, name: LowerName, authority: Arc<dyn AuthorityObject>) {
-        self.authorities.insert(name, authority);
+    pub fn upsert(&mut self, name: LowerName, authorities: Vec<Arc<dyn AuthorityObject>>) {
+        self.authorities.insert(name, authorities);
     }
 
     /// Remove a zone from the catalog
-    pub fn remove(&mut self, name: &LowerName) -> Option<Arc<dyn AuthorityObject>> {
+    pub fn remove(&mut self, name: &LowerName) -> Option<Vec<Arc<dyn AuthorityObject>>> {
         self.authorities.remove(name)
     }
 
@@ -282,18 +282,16 @@ impl Catalog {
             Ok(request_info)
         };
 
-        // verify the zone type and number of zones in request, then find the zone to update
-        let request_info = verify_request();
-        let authority = request_info.as_ref().map_err(|e| *e).and_then(|info| {
-            self.find(info.query.name())
-                .cloned()
-                .ok_or(ResponseCode::Refused)
-        });
+        let Ok(verify_request) = verify_request() else {
+            return Ok(ResponseInfo::serve_failed());
+        };
 
-        let response_code = match authority {
-            Ok(authority) => {
+        // verify the zone type and number of zones in request, then find the zone to update
+        if let Some(authorities) = self.find(verify_request.query.name()) {
+            #[allow(clippy::never_loop)]
+            for authority in authorities {
                 #[allow(deprecated)]
-                match authority.zone_type() {
+                let response_code = match authority.zone_type() {
                     ZoneType::Secondary | ZoneType::Slave => {
                         error!("secondary forwarding for update not yet implemented");
                         ResponseCode::NotImp
@@ -307,24 +305,25 @@ impl Catalog {
                         }
                     }
                     _ => ResponseCode::NotAuth,
-                }
+                };
+
+                let response = MessageResponseBuilder::new(Some(update.raw_query()));
+                let mut response_header = Header::default();
+                response_header.set_id(update.id());
+                response_header.set_op_code(OpCode::Update);
+                response_header.set_message_type(MessageType::Response);
+                response_header.set_response_code(response_code);
+
+                return send_response(
+                    response_edns,
+                    response.build_no_records(response_header),
+                    response_handle,
+                )
+                .await;
             }
-            Err(response_code) => response_code,
         };
 
-        let response = MessageResponseBuilder::new(Some(update.raw_query()));
-        let mut response_header = Header::default();
-        response_header.set_id(update.id());
-        response_header.set_op_code(OpCode::Update);
-        response_header.set_message_type(MessageType::Response);
-        response_header.set_response_code(response_code);
-
-        send_response(
-            response_edns,
-            response.build_no_records(response_header),
-            response_handle,
-        )
-        .await
+        Ok(ResponseInfo::serve_failed())
     }
 
     /// Checks whether the `Catalog` contains DNS records for `name`
@@ -353,9 +352,9 @@ impl Catalog {
         response_handle: R,
     ) -> ResponseInfo {
         let request_info = request.request_info();
-        let authority = self.find(request_info.query.name());
+        let authorities = self.find(request_info.query.name());
 
-        let Some(authority) = authority else {
+        let Some(authorities) = authorities else {
             // There are no authorities registered that can handle the request
             let response = MessageResponseBuilder::new(Some(request.raw_query()));
 
@@ -377,7 +376,7 @@ impl Catalog {
 
         let result = lookup(
             request_info.clone(),
-            authority.as_ref(),
+            authorities,
             request,
             response_edns
                 .as_ref()
@@ -393,8 +392,8 @@ impl Catalog {
     }
 
     /// Recursively searches the catalog for a matching authority
-    pub fn find(&self, name: &LowerName) -> Option<&Arc<(dyn AuthorityObject + 'static)>> {
-        debug!("searching authorities for: {}", name);
+    pub fn find(&self, name: &LowerName) -> Option<&Vec<Arc<(dyn AuthorityObject + 'static)>>> {
+        debug!("searching authorities for: {name}");
         self.authorities.get(name).or_else(|| {
             if !name.is_root() {
                 let name = name.base_name();
@@ -408,7 +407,7 @@ impl Catalog {
 
 async fn lookup<'a, R: ResponseHandler + Unpin>(
     request_info: RequestInfo<'_>,
-    authority: &dyn AuthorityObject,
+    authorities: &[Arc<dyn AuthorityObject>],
     request: &Request,
     response_edns: Option<Edns>,
     response_handle: R,
@@ -424,50 +423,83 @@ async fn lookup<'a, R: ResponseHandler + Unpin>(
 
     let query = request_info.query;
 
-    debug!(
-        "request: {request_id} found authority: {origin}; performing {query}",
-        origin = authority.origin()
-    );
+    for (authority_index, authority) in authorities.iter().enumerate() {
+        debug!(
+            "performing {query} on authority {origin} with request id {request_id}",
+            origin = authority.origin(),
+        );
 
-    // Wait so we can determine if we need to fire a request to the next authority in a chained
-    // configuration if the current authority declines to answer. NOTE: This is in preparation
-    // for the chained authority PR.
-    let result = authority.search(request_info, lookup_options).await;
+        // Wait so we can determine if we need to fire a request to the next authority in a chained
+        // configuration if the current authority declines to answer.
+        let mut result = authority.search(request_info.clone(), lookup_options).await;
 
-    // Abort only if the authority declined to handle the request.
-    if let LookupControlFlow::Skip = result {
-        trace!("build_response: aborting search on LookupControlFlow::Skip");
-        // This will change in the chained authority PR
-        return Err(LookupError::ResponseCode(ResponseCode::ServFail));
-    }
+        if let LookupControlFlow::Skip = result {
+            trace!("catalog::lookup::authority did not handle request");
+            continue;
+        } else if result.is_continue() {
+            trace!("catalog::lookup::authority did handle request with continue");
 
-    // We no longer need the context from LookupControlFlow, so decompose into a standard Result
-    // to clean up the rest of the match conditions
-    let Some(result) = result.map_result() else {
-        debug!("impossible skip detected after final lookup result");
-        return Err(LookupError::ResponseCode(ResponseCode::ServFail));
-    };
+            // For LookupControlFlow::Continue results, we'll call consult on every
+            // authority, except the authority that returned the Continue result.
+            for (continue_index, consult_authority) in authorities.iter().enumerate() {
+                if continue_index == authority_index {
+                    trace!("skipping current authority consult (index {continue_index})");
+                    continue;
+                } else {
+                    trace!("calling authority consult (index {continue_index})");
+                }
 
-    let (response_header, sections) =
-        build_response(result, authority, request_id, request.header(), query, edns).await;
-
-    let message_response = MessageResponseBuilder::new(Some(request.raw_query())).build(
-        response_header,
-        sections.answers.iter(),
-        sections.ns.iter(),
-        sections.soa.iter(),
-        sections.additionals.iter(),
-    );
-
-    let result = send_response(response_edns, message_response, response_handle).await;
-
-    match result {
-        Err(e) => {
-            error!("error sending response: {e}");
-            Err(LookupError::Io(e))
+                result = consult_authority
+                    .consult(
+                        request_info.query.name(),
+                        request_info.query.query_type(),
+                        lookup_options_for_edns(response_edns.as_ref()),
+                        result,
+                    )
+                    .await;
+            }
+        } else {
+            trace!("catalog::lookup::authority did handle request with break");
         }
-        Ok(l) => Ok(l),
+
+        // We no longer need the context from LookupControlFlow, so decompose into a standard Result
+        // to clean up the rest of the match conditions
+        let Some(result) = result.map_result() else {
+            error!("impossible skip detected after final lookup result");
+            return Err(LookupError::ResponseCode(ResponseCode::ServFail));
+        };
+
+        let (response_header, sections) = build_response(
+            result,
+            &**authority,
+            request_id,
+            request.header(),
+            query,
+            edns,
+        )
+        .await;
+
+        let message_response = MessageResponseBuilder::new(Some(request.raw_query())).build(
+            response_header,
+            sections.answers.iter(),
+            sections.ns.iter(),
+            sections.soa.iter(),
+            sections.additionals.iter(),
+        );
+
+        let result = send_response(response_edns, message_response, response_handle).await;
+
+        match result {
+            Err(e) => {
+                error!("error sending response: {e}");
+                return Err(LookupError::Io(e));
+            }
+            Ok(l) => return Ok(l),
+        }
     }
+
+    error!("end of chained authority loop reached with all authorities not answering");
+    Err(LookupError::ResponseCode(ResponseCode::ServFail))
 }
 
 #[allow(unused_variables)]

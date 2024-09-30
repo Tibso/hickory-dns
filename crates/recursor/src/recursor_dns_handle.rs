@@ -562,7 +562,7 @@ impl RecursorDnsHandle {
     async fn ns_pool_for_referral(
         &self,
         query: Query,
-        nameservers: Vec<ForwardNSData>,
+        nameservers: Arc<[ForwardNSData]>,
         request_time: Instant,
     ) -> Result<RecursorPool<TokioRuntimeProvider>, Error> {
         let query_name = query.name().clone();
@@ -572,8 +572,8 @@ impl RecursorDnsHandle {
         let mut config_group = NameServerConfigGroup::new();
         let mut need_ips_for_names = Vec::new();
 
-        for nameserver in nameservers.into_iter() {
-            let ns = nameserver.ns;
+        for nameserver in nameservers.iter() {
+            let ns = &nameserver.ns;
 
             let ns_name = if let Some(ns_name) = ns.data().as_ns() {
                 ns_name.0.clone()
@@ -620,7 +620,7 @@ impl RecursorDnsHandle {
             if glue_ips.peek().is_some() {
                 config_group.append_ips(glue_ips, true);
             } else {
-                debug!("ns_pool_for_referral glue not found for {}", ns);
+                debug!("ns_pool_for_referral glue not found for {ns}");
                 need_ips_for_names.push(ns);
             }
         }
@@ -630,7 +630,7 @@ impl RecursorDnsHandle {
         // collect missing IP addresses, select over them all, get the addresses
         // make it configurable to query for all records?
         if config_group.is_empty() && !need_ips_for_names.is_empty() {
-            debug!("ns_pool_for_referral need glue for {}", query_name);
+            debug!("ns_pool_for_referral need glue for {query_name}");
 
             let mut resolve_futures = FuturesUnordered::new();
             for rec_type in [RecordType::A, RecordType::AAAA] {
@@ -653,10 +653,7 @@ impl RecursorDnsHandle {
             .await;
         }
 
-        debug!(
-            "ns_pool_for_referral found nameservers for {}: {config_group:?}",
-            query_name
-        );
+        debug!("ns_pool_for_referral found nameservers for {query_name}: {config_group:?}");
 
         // now construct a namesever pool based off the NS and glue records
         let ns = GenericNameServerPool::from_config(

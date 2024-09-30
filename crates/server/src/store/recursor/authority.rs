@@ -10,7 +10,7 @@ use std::{io, path::Path, time::Instant};
 use tracing::{debug, info};
 
 #[cfg(feature = "dnssec")]
-use crate::{authority::Nsec3QueryInfo, config::dnssec::NxProofKind, proto::rr::dnssec::Proof};
+use crate::{authority::Nsec3QueryInfo, dnssec::NxProofKind, proto::rr::dnssec::Proof};
 use crate::{
     authority::{
         Authority, DnssecSummary, LookupControlFlow, LookupError, LookupObject, LookupOptions,
@@ -19,10 +19,11 @@ use crate::{
     proto::{
         op::{Query, ResponseCode},
         rr::{LowerName, Name, Record, RecordType},
+        xfer::Protocol,
     },
     recursor::Recursor,
     resolver::{
-        config::{NameServerConfig, NameServerConfigGroup, Protocol},
+        config::{NameServerConfig, NameServerConfigGroup},
         lookup::Lookup,
     },
     server::RequestInfo,

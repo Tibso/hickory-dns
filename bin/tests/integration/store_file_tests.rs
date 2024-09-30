@@ -3,7 +3,7 @@ use std::str::FromStr;
 use hickory_proto::rr::{LowerName, Name, RecordType, RrKey};
 use hickory_server::authority::{Authority, LookupOptions, ZoneType};
 #[cfg(feature = "dnssec")]
-use hickory_server::config::dnssec::NxProofKind;
+use hickory_server::dnssec::NxProofKind;
 use hickory_server::store::file::{FileAuthority, FileConfig};
 
 fn file(master_file_path: &str, _module: &str, _test_name: &str) -> FileAuthority {
@@ -30,7 +30,7 @@ dnssec_battery!(file, crate::store_file_tests::file);
 #[test]
 fn test_all_lines_are_loaded() {
     let config = FileConfig {
-        zone_file_path: "../../tests/test-data/test_configs/default/nonewline.zone".to_string(),
+        zone_file_path: "../tests/test-data/test_configs/default/nonewline.zone".to_string(),
     };
 
     let mut authority = FileAuthority::try_from_config(
@@ -53,7 +53,7 @@ fn test_all_lines_are_loaded() {
 #[test]
 fn test_implicit_in_class() {
     let config = FileConfig {
-        zone_file_path: "../../tests/test-data/test_configs/default/implicitclass.zone".to_string(),
+        zone_file_path: "../tests/test-data/test_configs/default/implicitclass.zone".to_string(),
     };
 
     let authority = FileAuthority::try_from_config(
@@ -71,7 +71,7 @@ fn test_implicit_in_class() {
 #[tokio::test]
 async fn test_ttl_wilcard() {
     let config = FileConfig {
-        zone_file_path: "../../tests/test-data/test_configs/default/test.local.zone".to_string(),
+        zone_file_path: "../tests/test-data/test_configs/default/test.local.zone".to_string(),
     };
 
     let zone_name = LowerName::from_str("test.local.").unwrap();

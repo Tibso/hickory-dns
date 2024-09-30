@@ -13,11 +13,12 @@ use hickory_proto::{
         Name, RData, Record, RecordType,
     },
     serialize::binary::BinDecodable,
+    xfer::Protocol,
 };
-use hickory_server::authority::{
-    AuthLookup, Authority, LookupError, LookupOptions, MessageRequest,
+use hickory_server::{
+    authority::{AuthLookup, Authority, LookupError, LookupOptions, MessageRequest},
+    server::RequestInfo,
 };
-use hickory_server::server::{Protocol, RequestInfo};
 
 const TEST_HEADER: &Header = &Header::new();
 
@@ -735,7 +736,7 @@ macro_rules! define_basic_test {
             fn $f () {
                 subscribe();
 
-                let authority = $new("../../tests/test-data/test_configs/example.com.zone", module_path!(), stringify!($f));
+                let authority = $new("../tests/test-data/test_configs/example.com.zone", module_path!(), stringify!($f));
                 crate::authority_battery::basic::$f(authority);
             }
         )*

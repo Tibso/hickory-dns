@@ -14,11 +14,11 @@ use hickory_proto::{
         },
         DNSClass, Name, RData, Record, RecordType,
     },
-    xfer,
+    xfer::{self, Protocol},
 };
 use hickory_server::{
     authority::{AuthLookup, Authority, DnssecAuthority, LookupOptions},
-    server::{Protocol, RequestInfo},
+    server::RequestInfo,
 };
 
 const TEST_HEADER: &Header = &Header::new();
@@ -369,7 +369,7 @@ pub fn verify(records: &[&Record], rrsig_records: &[Record<RRSIG>], keys: &[DNSK
 }
 
 pub fn add_signers<A: DnssecAuthority>(authority: &mut A) -> Vec<DNSKEY> {
-    use hickory_server::config::dnssec::*;
+    use hickory_dns::dnssec::KeyConfig;
     let signer_name = Name::from(authority.origin().to_owned());
 
     let mut keys = Vec::<DNSKEY>::new();
@@ -379,7 +379,7 @@ pub fn add_signers<A: DnssecAuthority>(authority: &mut A) -> Vec<DNSKEY> {
     // rsa
     {
         let key_config = KeyConfig {
-            key_path: "../../tests/test-data/test_configs/dnssec/rsa_2048.pem".to_string(),
+            key_path: "../tests/test-data/test_configs/dnssec/rsa_2048.pem".to_string(),
             password: Some("123456".to_string()),
             algorithm: Algorithm::RSASHA512.to_string(),
             signer_name: Some(signer_name.to_string()),
@@ -434,7 +434,7 @@ pub fn add_signers<A: DnssecAuthority>(authority: &mut A) -> Vec<DNSKEY> {
     #[cfg(feature = "dnssec-ring")]
     {
         let key_config = KeyConfig {
-            key_path: "../../tests/test-data/test_configs/dnssec/ed25519.pk8".to_string(),
+            key_path: "../tests/test-data/test_configs/dnssec/ed25519.pk8".to_string(),
             password: None,
             algorithm: Algorithm::ED25519.to_string(),
             signer_name: Some(signer_name.to_string()),
@@ -458,7 +458,7 @@ macro_rules! define_dnssec_test {
         $(
             #[test]
             fn $f () {
-                let mut authority = $new("../../tests/test-data/test_configs/example.com.zone", module_path!(), stringify!($f));
+                let mut authority = $new("../tests/test-data/test_configs/example.com.zone", module_path!(), stringify!($f));
                 let keys = crate::authority_battery::dnssec::add_signers(&mut authority);
                 crate::authority_battery::dnssec::$f(authority, &keys);
             }

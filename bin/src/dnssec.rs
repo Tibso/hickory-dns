@@ -8,8 +8,6 @@
 //! Configuration types for all security options in hickory-dns
 
 use std::path::Path;
-#[cfg(feature = "dnssec")]
-use std::sync::Arc;
 
 #[cfg(all(feature = "dns-over-openssl", not(feature = "dns-over-rustls")))]
 use openssl::{pkey::PKey, stack::Stack, x509::X509};
@@ -17,13 +15,13 @@ use openssl::{pkey::PKey, stack::Stack, x509::X509};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::Deserialize;
 
-use crate::proto::rr::domain::Name;
+use hickory_proto::rr::domain::Name;
 #[cfg(feature = "dnssec")]
-use crate::proto::rr::{
-    dnssec::{Algorithm, KeyFormat, KeyPair, Nsec3HashAlgorithm, Private, SigSigner},
+use hickory_proto::rr::{
+    dnssec::{Algorithm, KeyFormat, KeyPair, Private, SigSigner},
     domain::IntoName,
 };
-use crate::proto::serialize::txt::ParseResult;
+use hickory_proto::serialize::txt::ParseResult;
 
 /// Key pair configuration for DNSSEC keys for signing a zone
 #[derive(Deserialize, PartialEq, Eq, Debug)]
@@ -83,7 +81,7 @@ impl KeyConfig {
     #[cfg(any(feature = "dns-over-tls", feature = "dnssec"))]
     #[cfg_attr(docsrs, doc(cfg(any(feature = "dns-over-tls", feature = "dnssec"))))]
     pub fn format(&self) -> ParseResult<KeyFormat> {
-        use crate::proto::serialize::txt::ParseErrorKind;
+        use hickory_proto::serialize::txt::ParseErrorKind;
 
         let extension = self.key_path().extension().ok_or_else(|| {
             ParseErrorKind::Msg(format!(
@@ -170,37 +168,27 @@ impl KeyConfig {
 }
 
 /// Certificate format of the file being read
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Default, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum CertType {
     /// Pkcs12 formatted certificates and private key (requires OpenSSL)
+    #[default]
     Pkcs12,
     /// PEM formatted Certificate chain
     Pem,
 }
 
-impl Default for CertType {
-    fn default() -> Self {
-        Self::Pkcs12
-    }
-}
-
 /// Format of the private key file to read
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Default, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum PrivateKeyType {
     /// PKCS8 formatted key file, allows for a password (requires Rustls)
     Pkcs8,
     /// DER formatted key, raw and unencrypted
+    #[default]
     Der,
-}
-
-impl Default for PrivateKeyType {
-    fn default() -> Self {
-        Self::Der
-    }
 }
 
 /// Configuration for a TLS certificate
@@ -217,55 +205,34 @@ pub struct TlsCertConfig {
 
 impl TlsCertConfig {
     /// path to the pkcs12 der formatted certificate file
-    pub fn get_path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         Path::new(&self.path)
     }
 
     /// return the DNS name of the certificate hosted at the TLS endpoint
-    pub fn get_endpoint_name(&self) -> Option<&str> {
+    pub fn endpoint_name(&self) -> Option<&str> {
         self.endpoint_name.as_deref()
     }
 
     /// Returns the format type of the certificate file
-    pub fn get_cert_type(&self) -> CertType {
+    pub fn cert_type(&self) -> CertType {
         self.cert_type.unwrap_or_default()
     }
 
     /// optional password for open the pkcs12, none assumes no password
-    pub fn get_password(&self) -> Option<&str> {
+    pub fn password(&self) -> Option<&str> {
         self.password.as_deref()
     }
 
     /// returns the path to the private key, as associated with the certificate
-    pub fn get_private_key(&self) -> Option<&Path> {
+    pub fn private_key(&self) -> Option<&Path> {
         self.private_key.as_deref().map(Path::new)
     }
 
     /// returns the path to the private key
-    pub fn get_private_key_type(&self) -> PrivateKeyType {
+    pub fn private_key_type(&self) -> PrivateKeyType {
         self.private_key_type.unwrap_or_default()
     }
-}
-
-/// The kind of non-existence proof provided by the nameserver
-#[cfg(feature = "dnssec")]
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum NxProofKind {
-    /// Use NSEC
-    Nsec,
-    /// Use NSEC3
-    Nsec3 {
-        /// The algorithm used to hash the names.
-        #[serde(default)]
-        algorithm: Nsec3HashAlgorithm,
-        /// The salt used for hashing.
-        #[serde(default)]
-        salt: Arc<[u8]>,
-        /// The number of hashing iterations.
-        #[serde(default)]
-        iterations: u16,
-    },
 }
 
 /// set of DNSSEC algorithms to use to sign the zone. enable_dnssec must be true.
@@ -406,15 +373,15 @@ pub fn load_cert(
 ) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), String> {
     use tracing::{info, warn};
 
-    use crate::proto::rustls::tls_server::{read_cert, read_key, read_key_from_der};
+    use hickory_proto::rustls::tls_server::{read_cert, read_key, read_key_from_der};
 
-    let path = zone_dir.to_owned().join(tls_cert_config.get_path());
-    let cert_type = tls_cert_config.get_cert_type();
-    let password = tls_cert_config.get_password();
+    let path = zone_dir.to_owned().join(tls_cert_config.path());
+    let cert_type = tls_cert_config.cert_type();
+    let password = tls_cert_config.password();
     let private_key_path = tls_cert_config
-        .get_private_key()
+        .private_key()
         .map(|p| zone_dir.to_owned().join(p));
-    let private_key_type = tls_cert_config.get_private_key_type();
+    let private_key_type = tls_cert_config.private_key_type();
 
     let cert = match cert_type {
         CertType::Pem => {

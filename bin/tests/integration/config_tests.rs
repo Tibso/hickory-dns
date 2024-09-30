@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "toml")]
-
 use std::env;
 use std::fs::{read_dir, File};
 use std::io::Read;
@@ -24,15 +22,16 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use hickory_server::authority::ZoneType;
-use hickory_server::config::*;
 use toml::map::Keys;
 use toml::value::Array;
 use toml::{Table, Value};
 
+use hickory_dns::{Config, ZoneConfig};
+use hickory_server::authority::ZoneType;
+
 #[test]
 fn test_read_config() {
-    let server_path = env::var("TDNS_WORKSPACE_ROOT").unwrap_or_else(|_| "../..".to_owned());
+    let server_path = env::var("TDNS_WORKSPACE_ROOT").unwrap_or_else(|_| "..".to_owned());
     let path: PathBuf =
         PathBuf::from(server_path).join("tests/test-data/test_configs/example.toml");
 
@@ -41,16 +40,16 @@ fn test_read_config() {
     }
 
     println!("reading config");
-    let config: Config = Config::read_config(&path).unwrap();
+    let config = Config::read_config(&path).unwrap();
 
-    assert_eq!(config.get_listen_port(), 53);
-    assert_eq!(config.get_listen_addrs_ipv4(), Ok(Vec::<Ipv4Addr>::new()));
-    assert_eq!(config.get_listen_addrs_ipv6(), Ok(Vec::<Ipv6Addr>::new()));
-    assert_eq!(config.get_tcp_request_timeout(), Duration::from_secs(5));
-    assert_eq!(config.get_log_level(), tracing::Level::INFO);
-    assert_eq!(config.get_directory(), Path::new("/var/named"));
+    assert_eq!(config.listen_port(), 53);
+    assert_eq!(config.listen_addrs_ipv4(), Ok(Vec::<Ipv4Addr>::new()));
+    assert_eq!(config.listen_addrs_ipv6(), Ok(Vec::<Ipv6Addr>::new()));
+    assert_eq!(config.tcp_request_timeout(), Duration::from_secs(5));
+    assert_eq!(config.log_level(), tracing::Level::INFO);
+    assert_eq!(config.directory(), Path::new("/var/named"));
     assert_eq!(
-        config.get_zones(),
+        config.zones(),
         [
             ZoneConfig::new(
                 "localhost".into(),
@@ -127,29 +126,29 @@ fn test_read_config() {
 #[test]
 fn test_parse_toml() {
     let config = Config::from_toml("listen_port = 2053").unwrap();
-    assert_eq!(config.get_listen_port(), 2053);
+    assert_eq!(config.listen_port(), 2053);
 
     let config = Config::from_toml("listen_addrs_ipv4 = [\"0.0.0.0\"]").unwrap();
     assert_eq!(
-        config.get_listen_addrs_ipv4(),
+        config.listen_addrs_ipv4(),
         Ok(vec![Ipv4Addr::new(0, 0, 0, 0)])
     );
 
     let config = Config::from_toml("listen_addrs_ipv4 = [\"0.0.0.0\", \"127.0.0.1\"]").unwrap();
     assert_eq!(
-        config.get_listen_addrs_ipv4(),
+        config.listen_addrs_ipv4(),
         Ok(vec![Ipv4Addr::new(0, 0, 0, 0), Ipv4Addr::new(127, 0, 0, 1)])
     );
 
     let config = Config::from_toml("listen_addrs_ipv6 = [\"::0\"]").unwrap();
     assert_eq!(
-        config.get_listen_addrs_ipv6(),
+        config.listen_addrs_ipv6(),
         Ok(vec![Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)])
     );
 
     let config = Config::from_toml("listen_addrs_ipv6 = [\"::0\", \"::1\"]").unwrap();
     assert_eq!(
-        config.get_listen_addrs_ipv6(),
+        config.listen_addrs_ipv6(),
         Ok(vec![
             Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0),
             Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
@@ -157,13 +156,13 @@ fn test_parse_toml() {
     );
 
     let config = Config::from_toml("tcp_request_timeout = 25").unwrap();
-    assert_eq!(config.get_tcp_request_timeout(), Duration::from_secs(25));
+    assert_eq!(config.tcp_request_timeout(), Duration::from_secs(25));
 
     let config = Config::from_toml("log_level = \"Debug\"").unwrap();
-    assert_eq!(config.get_log_level(), tracing::Level::DEBUG);
+    assert_eq!(config.log_level(), tracing::Level::DEBUG);
 
     let config = Config::from_toml("directory = \"/dev/null\"").unwrap();
-    assert_eq!(config.get_directory(), Path::new("/dev/null"));
+    assert_eq!(config.directory(), Path::new("/dev/null"));
 }
 
 #[cfg(feature = "dnssec")]
@@ -197,50 +196,44 @@ signer_name = \"ns.example.com.\"
     )
     .unwrap();
     assert_eq!(
-        config.get_zones()[0].get_keys()[0].key_path(),
+        config.zones()[0].keys()[0].key_path(),
         Path::new("/path/to/my_ed25519.pem")
     );
     assert_eq!(
-        config.get_zones()[0].get_keys()[0].algorithm().unwrap(),
+        config.zones()[0].keys()[0].algorithm().unwrap(),
         Algorithm::ED25519
     );
     assert_eq!(
-        config.get_zones()[0].get_keys()[0]
-            .signer_name()
-            .unwrap()
-            .unwrap(),
+        config.zones()[0].keys()[0].signer_name().unwrap().unwrap(),
         Name::parse("ns.example.com.", None).unwrap()
     );
-    assert!(!config.get_zones()[0].get_keys()[0].is_zone_signing_key(),);
-    assert!(config.get_zones()[0].get_keys()[0].is_zone_update_auth(),);
+    assert!(!config.zones()[0].keys()[0].is_zone_signing_key(),);
+    assert!(config.zones()[0].keys()[0].is_zone_update_auth(),);
 
     assert_eq!(
-        config.get_zones()[0].get_keys()[1].key_path(),
+        config.zones()[0].keys()[1].key_path(),
         Path::new("/path/to/my_rsa.pem")
     );
     assert_eq!(
-        config.get_zones()[0].get_keys()[1].algorithm().unwrap(),
+        config.zones()[0].keys()[1].algorithm().unwrap(),
         Algorithm::RSASHA256
     );
     assert_eq!(
-        config.get_zones()[0].get_keys()[1]
-            .signer_name()
-            .unwrap()
-            .unwrap(),
+        config.zones()[0].keys()[1].signer_name().unwrap().unwrap(),
         Name::parse("ns.example.com.", None).unwrap()
     );
-    assert!(!config.get_zones()[0].get_keys()[1].is_zone_signing_key(),);
-    assert!(!config.get_zones()[0].get_keys()[1].is_zone_update_auth(),);
+    assert!(!config.zones()[0].keys()[1].is_zone_signing_key(),);
+    assert!(!config.zones()[0].keys()[1].is_zone_update_auth(),);
 }
 
 #[test]
-#[cfg(feature = "dnssec")]
+#[cfg(feature = "dns-over-tls")]
 fn test_parse_tls() {
     // defaults
     let config = Config::from_toml("").unwrap();
 
-    assert_eq!(config.get_tls_listen_port(), 853);
-    assert_eq!(config.get_tls_cert(), None);
+    assert_eq!(config.tls_listen_port(), 853);
+    assert_eq!(config.tls_cert(), None);
 
     let config = Config::from_toml(
         "tls_cert = { path = \"path/to/some.pkcs12\", endpoint_name = \"ns.example.com\" }
@@ -249,15 +242,15 @@ tls_listen_port = 8853
     )
     .unwrap();
 
-    assert_eq!(config.get_tls_listen_port(), 8853);
+    assert_eq!(config.tls_listen_port(), 8853);
     assert_eq!(
-        config.get_tls_cert().unwrap().get_path(),
+        config.tls_cert().unwrap().path(),
         Path::new("path/to/some.pkcs12")
     );
 }
 
 fn test_config(path: &str) {
-    let workspace = env::var("TDNS_WORKSPACE_ROOT").unwrap_or_else(|_| "../..".to_owned());
+    let workspace = env::var("TDNS_WORKSPACE_ROOT").unwrap_or_else(|_| "..".to_owned());
     let path = PathBuf::from(workspace)
         .join("tests/test-data/test_configs")
         .join(path)
@@ -277,8 +270,11 @@ macro_rules! define_test_config {
 }
 
 define_test_config!(all_supported_dnssec);
+#[cfg(feature = "dns-over-https-rustls")]
 define_test_config!(dns_over_https);
+#[cfg(feature = "dns-over-tls")]
 define_test_config!(dns_over_tls_rustls_and_openssl);
+#[cfg(feature = "dns-over-tls")]
 define_test_config!(dns_over_tls);
 #[cfg(feature = "sqlite")]
 define_test_config!(dnssec_with_update);
@@ -289,7 +285,7 @@ define_test_config!(ipv4_only);
 define_test_config!(ipv6_only);
 define_test_config!(openssl_dnssec);
 define_test_config!(ring_dnssec);
-#[cfg(feature = "hickory-resolver")]
+#[cfg(feature = "resolver")]
 define_test_config!(example_forwarder);
 
 /// Iterator that yields modified TOML tables with an extra field added, and recurses down the
@@ -436,7 +432,7 @@ impl<'a> Iterator for ArrayMutator<'a> {
 #[test]
 fn test_reject_unknown_fields() {
     let test_configs_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/test-data/test_configs");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/test-data/test_configs");
     for result in read_dir(test_configs_dir).unwrap() {
         let entry = result.unwrap();
         let file_name = entry.file_name().into_string().unwrap();
@@ -462,30 +458,38 @@ fn test_reject_unknown_fields() {
         let zones = config_table.get("zones").unwrap().as_array().unwrap();
         for zone in zones {
             if let Some(stores) = zone.get("stores") {
-                let stores = stores.as_table().unwrap();
-                let _store_type = stores.get("type").unwrap().as_str().unwrap();
+                let stores = if !stores.is_array() {
+                    &vec![stores.clone()]
+                } else {
+                    stores.as_array().unwrap()
+                };
 
-                #[cfg(not(feature = "sqlite"))]
-                if _store_type == "sqlite" {
-                    println!("skipping due to sqlite store");
-                    skip = true;
-                    break;
-                }
+                for store in stores {
+                    let store = store.as_table().unwrap();
+                    let _store_type = store.get("type").unwrap().as_str().unwrap();
 
-                #[cfg(not(feature = "hickory-resolver"))]
-                if _store_type == "forward" {
-                    println!("skipping due to forward store");
-                    skip = true;
-                    break;
-                }
+                    #[cfg(not(feature = "sqlite"))]
+                    if _store_type == "sqlite" {
+                        println!("skipping due to sqlite store");
+                        skip = true;
+                        break;
+                    }
 
-                #[cfg(not(feature = "hickory-recursor"))]
-                if _store_type != "recursor" {
-                    println!("skipping due to recursor store");
-                    skip = true;
-                    break;
+                    #[cfg(not(feature = "resolver"))]
+                    if _store_type == "forward" {
+                        println!("skipping due to forward store");
+                        skip = true;
+                        break;
+                    }
+
+                    #[cfg(not(feature = "recursor"))]
+                    if _store_type == "recursor" {
+                        println!("skipping due to recursor store");
+                        skip = true;
+                        break;
+                    }
                 }
-            }
+            };
         }
 
         if skip {
@@ -505,8 +509,11 @@ fn test_reject_unknown_fields() {
                     toml::to_string_pretty(&modified_config).unwrap()
                 ),
                 Err(error) => assert!(
-                    error.message().starts_with("unknown field"),
-                    "unexpected error: {error:?}"
+                    error
+                        .message()
+                        .starts_with("data did not match any variant")
+                        || error.message().starts_with("unknown field"),
+                    "unexpected error: {error:?} for {modified_config:?}"
                 ),
             }
         }

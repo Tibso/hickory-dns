@@ -12,7 +12,7 @@ use hickory_server::authority::{Catalog, ZoneType};
     feature = "dns-over-rustls",
     feature = "dns-over-openssl"
 ))]
-use hickory_server::config::dnssec::NxProofKind;
+use hickory_server::dnssec::NxProofKind;
 use hickory_server::store::in_memory::InMemoryAuthority;
 use hickory_server::ServerFuture;
 use std::collections::BTreeMap;
@@ -115,7 +115,7 @@ pub fn new_large_catalog(num_records: u32) -> Catalog {
     .unwrap();
 
     let mut catalog = Catalog::new();
-    catalog.upsert(Name::root().into(), Arc::new(authority));
+    catalog.upsert(Name::root().into(), vec![Arc::new(authority)]);
     catalog
 }
 

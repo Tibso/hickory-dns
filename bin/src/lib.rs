@@ -9,9 +9,7 @@
 
 pub mod dnssec;
 
-#[cfg(feature = "toml")]
 use std::fs::File;
-#[cfg(feature = "toml")]
 use std::io::Read;
 use std::net::{AddrParseError, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
@@ -22,13 +20,13 @@ use cfg_if::cfg_if;
 use ipnet::IpNet;
 use serde::{self, Deserialize};
 
-use crate::proto::error::ProtoResult;
-use crate::proto::rr::Name;
-
-use crate::authority::ZoneType;
-#[cfg(feature = "toml")]
-use crate::error::ConfigResult;
-use crate::store::StoreConfig;
+use hickory_proto::error::ProtoResult;
+use hickory_proto::rr::Name;
+use hickory_server::authority::ZoneType;
+#[cfg(feature = "dnssec")]
+use hickory_server::dnssec::NxProofKind;
+use hickory_server::error::ConfigResult;
+use hickory_server::store::StoreConfigContainer;
 
 static DEFAULT_PATH: &str = "/var/named"; // TODO what about windows (do I care? ;)
 static DEFAULT_PORT: u16 = 53;
@@ -78,7 +76,7 @@ pub struct Config {
     #[serde(default)]
     zones: Vec<ZoneConfig>,
     /// Certificate to associate to TLS connections (currently the same is used for HTTPS and TLS)
-    #[cfg(feature = "dnssec")]
+    #[cfg(feature = "dns-over-tls")]
     tls_cert: Option<dnssec::TlsCertConfig>,
     /// The HTTP endpoint where the DNS-over-HTTPS server provides service. Applicable
     /// to both HTTP/2 and HTTP/3 servers. Typically `/dns-query`.
@@ -94,7 +92,6 @@ pub struct Config {
 
 impl Config {
     /// read a Config file from the file specified at path.
-    #[cfg(feature = "toml")]
     pub fn read_config(path: &Path) -> ConfigResult<Self> {
         let mut file = File::open(path)?;
         let mut toml = String::new();
@@ -103,73 +100,72 @@ impl Config {
     }
 
     /// Read a [`Config`] from the given TOML string.
-    #[cfg(feature = "toml")]
     pub fn from_toml(toml: &str) -> ConfigResult<Self> {
         Ok(toml::from_str(toml)?)
     }
 
     /// set of listening ipv4 addresses (for TCP and UDP)
-    pub fn get_listen_addrs_ipv4(&self) -> Result<Vec<Ipv4Addr>, AddrParseError> {
+    pub fn listen_addrs_ipv4(&self) -> Result<Vec<Ipv4Addr>, AddrParseError> {
         self.listen_addrs_ipv4.iter().map(|s| s.parse()).collect()
     }
 
     /// set of listening ipv6 addresses (for TCP and UDP)
-    pub fn get_listen_addrs_ipv6(&self) -> Result<Vec<Ipv6Addr>, AddrParseError> {
+    pub fn listen_addrs_ipv6(&self) -> Result<Vec<Ipv6Addr>, AddrParseError> {
         self.listen_addrs_ipv6.iter().map(|s| s.parse()).collect()
     }
 
     /// port on which to listen for connections on specified addresses
-    pub fn get_listen_port(&self) -> u16 {
+    pub fn listen_port(&self) -> u16 {
         self.listen_port.unwrap_or(DEFAULT_PORT)
     }
 
     /// port on which to listen for TLS connections
-    pub fn get_tls_listen_port(&self) -> u16 {
+    pub fn tls_listen_port(&self) -> u16 {
         self.tls_listen_port.unwrap_or(DEFAULT_TLS_PORT)
     }
 
     /// port on which to listen for HTTPS connections
-    pub fn get_https_listen_port(&self) -> u16 {
+    pub fn https_listen_port(&self) -> u16 {
         self.https_listen_port.unwrap_or(DEFAULT_HTTPS_PORT)
     }
 
     /// port on which to listen for QUIC connections
-    pub fn get_quic_listen_port(&self) -> u16 {
+    pub fn quic_listen_port(&self) -> u16 {
         self.quic_listen_port.unwrap_or(DEFAULT_QUIC_PORT)
     }
 
     /// port on which to listen for HTTP/3 connections
-    pub fn get_h3_listen_port(&self) -> u16 {
+    pub fn h3_listen_port(&self) -> u16 {
         self.h3_listen_port.unwrap_or(DEFAULT_H3_PORT)
     }
 
     /// get if TCP protocol should be disabled
-    pub fn get_disable_tcp(&self) -> bool {
+    pub fn disable_tcp(&self) -> bool {
         self.disable_tcp.unwrap_or_default()
     }
 
     /// get if UDP protocol should be disabled
-    pub fn get_disable_udp(&self) -> bool {
+    pub fn disable_udp(&self) -> bool {
         self.disable_udp.unwrap_or_default()
     }
 
     /// get if TLS protocol should be disabled
-    pub fn get_disable_tls(&self) -> bool {
+    pub fn disable_tls(&self) -> bool {
         self.disable_tls.unwrap_or_default()
     }
 
     /// get if HTTPS protocol should be disabled
-    pub fn get_disable_https(&self) -> bool {
+    pub fn disable_https(&self) -> bool {
         self.disable_https.unwrap_or_default()
     }
 
     /// get if QUIC protocol should be disabled
-    pub fn get_disable_quic(&self) -> bool {
+    pub fn disable_quic(&self) -> bool {
         self.disable_quic.unwrap_or_default()
     }
 
     /// default timeout for all TCP connections before forcibly shutdown
-    pub fn get_tcp_request_timeout(&self) -> Duration {
+    pub fn tcp_request_timeout(&self) -> Duration {
         Duration::from_secs(
             self.tcp_request_timeout
                 .unwrap_or(DEFAULT_TCP_REQUEST_TIMEOUT),
@@ -177,7 +173,7 @@ impl Config {
     }
 
     /// specify the log level which should be used, ["Trace", "Debug", "Info", "Warn", "Error"]
-    pub fn get_log_level(&self) -> tracing::Level {
+    pub fn log_level(&self) -> tracing::Level {
         if let Some(ref level_str) = self.log_level {
             tracing::Level::from_str(level_str).unwrap_or(tracing::Level::INFO)
         } else {
@@ -186,21 +182,21 @@ impl Config {
     }
 
     /// the path for all zone configurations, defaults to `/var/named`
-    pub fn get_directory(&self) -> &Path {
+    pub fn directory(&self) -> &Path {
         self.directory
             .as_ref()
             .map_or(Path::new(DEFAULT_PATH), Path::new)
     }
 
     /// the set of zones which should be loaded
-    pub fn get_zones(&self) -> &[ZoneConfig] {
+    pub fn zones(&self) -> &[ZoneConfig] {
         &self.zones
     }
 
     /// the tls certificate to use for accepting tls connections
-    pub fn get_tls_cert(&self) -> Option<&dnssec::TlsCertConfig> {
+    pub fn tls_cert(&self) -> Option<&dnssec::TlsCertConfig> {
         cfg_if! {
-            if #[cfg(feature = "dnssec")] {
+            if #[cfg(feature = "dns-over-tls")] {
                 self.tls_cert.as_ref()
             } else {
                 None
@@ -210,19 +206,19 @@ impl Config {
 
     /// the HTTP endpoint from where requests are received
     #[cfg(any(feature = "dns-over-https-rustls", feature = "dns-over-h3"))]
-    pub fn get_http_endpoint(&self) -> &str {
+    pub fn http_endpoint(&self) -> &str {
         self.http_endpoint
             .as_deref()
             .unwrap_or(hickory_proto::http::DEFAULT_DNS_QUERY_PATH)
     }
 
     /// get the networks denied access to this server
-    pub fn get_deny_networks(&self) -> &[IpNet] {
+    pub fn deny_networks(&self) -> &[IpNet] {
         &self.deny_networks
     }
 
     /// get the networks allowed to connect to this server
-    pub fn get_allow_networks(&self) -> &[IpNet] {
+    pub fn allow_networks(&self) -> &[IpNet] {
         &self.allow_networks
     }
 }
@@ -248,10 +244,10 @@ pub struct ZoneConfig {
     pub keys: Vec<dnssec::KeyConfig>,
     /// Store configurations, TODO: allow chained Stores
     #[serde(default)]
-    pub stores: Option<StoreConfig>,
+    pub stores: Option<StoreConfigContainer>,
     /// The kind of non-existence proof provided by the nameserver
     #[cfg(feature = "dnssec")]
-    pub nx_proof_kind: Option<dnssec::NxProofKind>,
+    pub nx_proof_kind: Option<NxProofKind>,
 }
 
 impl ZoneConfig {
@@ -276,7 +272,7 @@ impl ZoneConfig {
         allow_axfr: Option<bool>,
         enable_dnssec: Option<bool>,
         keys: Vec<dnssec::KeyConfig>,
-        #[cfg(feature = "dnssec")] nx_proof_kind: Option<dnssec::NxProofKind>,
+        #[cfg(feature = "dnssec")] nx_proof_kind: Option<NxProofKind>,
     ) -> Self {
         Self {
             zone,
@@ -294,12 +290,12 @@ impl ZoneConfig {
 
     // TODO this is a little ugly for the parse, b/c there is no terminal char
     /// returns the name of the Zone, i.e. the `example.com` of `www.example.com.`
-    pub fn get_zone(&self) -> ProtoResult<Name> {
+    pub fn zone(&self) -> ProtoResult<Name> {
         Name::parse(&self.zone, Some(&Name::new()))
     }
 
     /// the type of the zone
-    pub fn get_zone_type(&self) -> ZoneType {
+    pub fn zone_type(&self) -> ZoneType {
         self.zone_type
     }
 
@@ -307,7 +303,7 @@ impl ZoneConfig {
     ///
     /// this is ony used on first load, if dynamic update is enabled for the zone, then the journal
     /// file is the actual source of truth for the zone.
-    pub fn get_file(&self) -> PathBuf {
+    pub fn file(&self) -> PathBuf {
         // TODO: Option on PathBuf
         PathBuf::from(self.file.as_ref().expect("file was none"))
     }
@@ -336,18 +332,18 @@ impl ZoneConfig {
     /// the configuration for the keys used for auth and/or dnssec zone signing.
     #[cfg(feature = "dnssec")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dnssec")))]
-    pub fn get_keys(&self) -> &[dnssec::KeyConfig] {
+    pub fn keys(&self) -> &[dnssec::KeyConfig] {
         &self.keys
     }
 }
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "toml")]
+    #[cfg(feature = "recursor")]
     #[test]
     fn example_recursor_config() {
         toml::from_str::<super::Config>(include_str!(
-            "../../../../tests/test-data/test_configs/example_recursor.toml"
+            "../../tests/test-data/test_configs/example_recursor.toml"
         ))
         .unwrap();
     }

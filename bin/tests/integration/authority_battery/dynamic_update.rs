@@ -10,19 +10,20 @@ use futures_executor::block_on;
 
 use hickory_proto::{
     op::{update_message, Header, Message, Query, ResponseCode},
-    rr::dnssec::{Algorithm, SigSigner, SupportedAlgorithms, Verifier},
     rr::{
+        dnssec::{Algorithm, SigSigner, SupportedAlgorithms, Verifier},
         rdata::{A as A4, AAAA},
         DNSClass, Name, RData, Record, RecordSet, RecordType,
     },
     serialize::binary::{BinDecodable, BinEncodable},
+    xfer::Protocol,
 };
 use hickory_server::{
     authority::{
         AuthLookup, Authority, DnssecAuthority, LookupError, LookupOptions, MessageRequest,
         UpdateResult,
     },
-    server::{Protocol, RequestInfo},
+    server::RequestInfo,
 };
 
 const TEST_HEADER: &Header = &Header::new();
@@ -766,8 +767,8 @@ pub fn test_delete_all<A: Authority<Lookup = AuthLookup>>(mut authority: A, keys
 }
 
 pub fn add_auth<A: DnssecAuthority>(authority: &mut A) -> Vec<SigSigner> {
+    use hickory_dns::dnssec::KeyConfig;
     use hickory_proto::rr::dnssec::rdata::key::KeyUsage;
-    use hickory_server::config::dnssec::*;
 
     let update_name = Name::from_str("update")
         .unwrap()
@@ -781,7 +782,7 @@ pub fn add_auth<A: DnssecAuthority>(authority: &mut A) -> Vec<SigSigner> {
     #[cfg(feature = "dnssec-openssl")]
     {
         let key_config = KeyConfig {
-            key_path: "../../tests/test-data/test_configs/dnssec/rsa_2048.pem".to_string(),
+            key_path: "../tests/test-data/test_configs/dnssec/rsa_2048.pem".to_string(),
             password: Some("123456".to_string()),
             algorithm: Algorithm::RSASHA512.to_string(),
             signer_name: Some(update_name.to_string()),
@@ -841,7 +842,7 @@ pub fn add_auth<A: DnssecAuthority>(authority: &mut A) -> Vec<SigSigner> {
     #[cfg(feature = "dnssec-ring")]
     {
         let key_config = KeyConfig {
-            key_path: "../../tests/test-data/test_configs/dnssec/ed25519.pk8".to_string(),
+            key_path: "../tests/test-data/test_configs/dnssec/ed25519.pk8".to_string(),
             password: None,
             algorithm: Algorithm::ED25519.to_string(),
             signer_name: Some(update_name.to_string()),
@@ -870,7 +871,7 @@ macro_rules! define_update_test {
         $(
             #[test]
             fn $f () {
-                let mut authority = $new("../../tests/test-data/test_configs/example.com.zone", module_path!(), stringify!($f));
+                let mut authority = $new("../tests/test-data/test_configs/example.com.zone", module_path!(), stringify!($f));
                 let keys = crate::authority_battery::dynamic_update::add_auth(&mut authority);
                 crate::authority_battery::dynamic_update::$f(authority, &keys);
             }
