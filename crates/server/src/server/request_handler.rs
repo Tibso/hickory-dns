@@ -27,17 +27,20 @@ pub struct Request {
     src: SocketAddr,
     /// Protocol of the request
     protocol: Protocol,
+    /// Local address of the socket used by the request
+    socket_local_addr: SocketAddr
 }
 
 impl Request {
     /// Build a new requests with the inbound message, source address, and protocol.
     ///
     /// This will return an error on bad verification.
-    pub fn new(message: MessageRequest, src: SocketAddr, protocol: Protocol) -> Self {
+    pub fn new(message: MessageRequest, src: SocketAddr, protocol: Protocol, socket_local_addr: SocketAddr) -> Self {
         Self {
             message,
             src,
             protocol,
+            socket_local_addr
         }
     }
 

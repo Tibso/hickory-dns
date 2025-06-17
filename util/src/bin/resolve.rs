@@ -236,7 +236,7 @@ async fn execute_query(
             .unwrap_or_else(|_| panic!("Could not parse {} into an IP address", name));
         Ok(resolver.reverse_lookup(v4addr).await?.into())
     } else {
-        Ok(resolver.lookup(name.to_string(), ty).await?)
+        Ok(resolver.lookup(name.to_string(), ty, false).await?)
     }
 }
 

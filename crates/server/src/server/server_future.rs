@@ -74,6 +74,8 @@ impl<T: RequestHandler> ServerFuture<T> {
     pub fn register_socket(&mut self, socket: net::UdpSocket) {
         debug!("registering udp: {:?}", socket);
 
+        let socket_local_addr = socket.local_addr().unwrap();
+
         // create the new UdpStream, the IP address isn't relevant, and ideally goes essentially no where.
         //   the address used is acquired from the inbound queries
         let (mut stream, stream_handle) =
@@ -124,7 +126,7 @@ impl<T: RequestHandler> ServerFuture<T> {
                     let stream_handle = stream_handle.with_remote_addr(src_addr);
 
                     inner_join_set.spawn(async move {
-                        handle_raw_request(message, Protocol::Udp, access, handler, stream_handle)
+                        handle_raw_request(message, Protocol::Udp, access, socket_local_addr, handler, stream_handle)
                             .await;
                     });
 
@@ -161,6 +163,8 @@ impl<T: RequestHandler> ServerFuture<T> {
     ///               only, this would require some type of whitelisting.
     pub fn register_listener(&mut self, listener: net::TcpListener, timeout: Duration) {
         debug!("register tcp: {:?}", listener);
+
+        let socket_local_addr = listener.local_addr().unwrap();
 
         let handler = self.handler.clone();
         let access = self.access.clone();
@@ -226,6 +230,7 @@ impl<T: RequestHandler> ServerFuture<T> {
                             message,
                             Protocol::Tcp,
                             access.clone(),
+                            socket_local_addr,
                             handler.clone(),
                             stream_handle.clone(),
                         )
@@ -963,6 +968,7 @@ pub(crate) async fn handle_raw_request<T: RequestHandler>(
     message: SerialMessage,
     protocol: Protocol,
     access: Arc<AccessControl>,
+    socket_local_addr: SocketAddr,
     request_handler: Arc<T>,
     response_handler: BufDnsStreamHandle,
 ) {
@@ -974,6 +980,7 @@ pub(crate) async fn handle_raw_request<T: RequestHandler>(
         src_addr,
         protocol,
         access,
+        socket_local_addr,
         request_handler,
         response_handler,
     )
@@ -1045,6 +1052,7 @@ pub(crate) async fn handle_request<R: ResponseHandler, T: RequestHandler>(
     src_addr: SocketAddr,
     protocol: Protocol,
     access: Arc<AccessControl>,
+    socket_local_addr: SocketAddr,
     request_handler: Arc<T>,
     response_handler: R,
 ) {
@@ -1063,7 +1071,7 @@ pub(crate) async fn handle_request<R: ResponseHandler, T: RequestHandler>(
         let message_type = message.message_type();
         let is_dnssec = message.edns().map_or(false, Edns::dnssec_ok);
 
-        let request = Request::new(message, src_addr, protocol);
+        let request = Request::new(message, src_addr, protocol, socket_local_addr);
 
         let info = request.request_info();
         let query = info.query.clone();

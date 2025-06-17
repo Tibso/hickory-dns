@@ -159,9 +159,10 @@ impl Stream for TestClientStream {
             Poll::Ready(Some(bytes)) => {
                 let mut decoder = BinDecoder::new(bytes.bytes());
                 let src_addr = SocketAddr::from(([127, 0, 0, 1], 1234));
+                let socket_local_addr = SocketAddr::from(([127, 0, 0, 1], 1234));
 
                 let message = MessageRequest::read(&mut decoder).expect("could not decode message");
-                let request = Request::new(message, src_addr, Protocol::Udp);
+                let request = Request::new(message, src_addr, Protocol::Udp, socket_local_addr);
 
                 let response_handler = TestResponseHandler::new();
                 block_on(
