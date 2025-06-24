@@ -63,6 +63,11 @@ impl Request {
     pub fn protocol(&self) -> Protocol {
         self.protocol
     }
+    
+    /// Local address of the socket used by the request
+    pub fn socket_local_addr(&self) -> SocketAddr {
+        self.socket_local_addr
+    }
 }
 
 impl std::ops::Deref for Request {
